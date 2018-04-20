@@ -26,7 +26,7 @@ In adversarial domain adaptation, this problem is usually solved by training an 
 
 **Paper**: Wasserstein Distance Guided Representation Learning, Shen et al. (2017)  
 **Link**: [https://arxiv.org/abs/1707.01217](https://arxiv.org/abs/1707.01217)  
-**Description**: Uses a domain critic to minize the Wasserstein Distance (with Gradient Penalty) between domains.  
+**Description**: Uses a domain critic to minimize the Wasserstein Distance (with Gradient Penalty) between domains.  
 **Implementation**: [wdgrl.py](https://github.com/jvanvugt/pytorch-domain-adaptation/blob/master/wdgrl.py)
 
 
