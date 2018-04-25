@@ -2,7 +2,7 @@ from PIL import Image
 
 import numpy as np
 import torch
-from torch.autograd import Variable, Function
+from torch.autograd import Function
 
 
 def set_requires_grad(model, requires_grad=True):
@@ -40,7 +40,7 @@ class GradientReversalFunction(Function):
     @staticmethod
     def backward(ctx, grads):
         lambda_ = ctx.lambda_
-        lambda_ = Variable(torch.cuda.FloatTensor([lambda_]))
+        lambda_ = grads.new_tensor(lambda_)
         dx = -lambda_ * grads
         return dx, None
 

@@ -7,7 +7,6 @@ import argparse
 
 import torch
 from torch import nn
-from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -20,8 +19,11 @@ from models import Net
 from utils import GrayscaleToRgb, GradientReversal
 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def main(args):
-    model = Net().cuda()
+    model = Net().to(device)
     model.load_state_dict(torch.load(args.MODEL_FILE))
     feature_extractor = model.feature_extractor
     clf = model.classifier
@@ -33,7 +35,7 @@ def main(args):
         nn.Linear(50, 20),
         nn.ReLU(),
         nn.Linear(20, 1)
-    ).cuda()
+    ).to(device)
 
     half_batch = args.batch_size // 2
     source_dataset = MNIST(config.DATA_DIR/'mnist', train=True, download=True,
@@ -54,11 +56,11 @@ def main(args):
         total_domain_loss = total_label_accuracy = 0
         for (source_x, source_labels), (target_x, _) in tqdm(batches, leave=False, total=n_batches):
                 x = torch.cat([source_x, target_x])
-                x = Variable(x).cuda()
+                x = x.to(device)
                 domain_y = torch.cat([torch.ones(source_x.shape[0]),
                                       torch.zeros(target_x.shape[0])])
-                domain_y = Variable(domain_y).cuda()
-                label_y = Variable(source_labels).cuda()
+                domain_y = domain_y.to(device)
+                label_y = source_labels.to(device)
 
                 features = feature_extractor(x).view(x.shape[0], -1)
                 domain_preds = discriminator(features).squeeze()
@@ -72,8 +74,8 @@ def main(args):
                 loss.backward()
                 optim.step()
 
-                total_domain_loss += float(domain_loss)
-                total_label_accuracy += float((label_preds.max(1)[1] == label_y).float().mean())
+                total_domain_loss += domain_loss.item()
+                total_label_accuracy += (label_preds.max(1)[1] == label_y).float().mean().item()
 
         mean_loss = total_domain_loss / n_batches
         mean_accuracy = total_label_accuracy / n_batches

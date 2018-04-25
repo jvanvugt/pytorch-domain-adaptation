@@ -2,7 +2,6 @@ import argparse
 
 import numpy as np
 import torch
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision.datasets import MNIST
@@ -12,6 +11,9 @@ from tqdm import tqdm
 import config
 from models import Net
 from utils import GrayscaleToRgb
+
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def create_dataloaders(batch_size):
@@ -31,23 +33,20 @@ def create_dataloaders(batch_size):
 
 
 def do_epoch(model, dataloader, criterion, optim=None):
-    training = optim is not None
     total_loss = 0
     total_accuracy = 0
-    model.train() if training else model.eval()
     for x, y_true in tqdm(dataloader, leave=False):
-        x = Variable(x, volatile=not training).cuda()
-        y_true = Variable(y_true, volatile=not training).cuda()
+        x, y_true = x.to(device), y_true.to(device)
         y_pred = model(x)
         loss = criterion(y_pred, y_true)
 
-        if training:
+        if optim is not None:
             optim.zero_grad()
             loss.backward()
             optim.step()
 
-        total_loss += float(loss)
-        total_accuracy += float((y_pred.max(1)[1] == y_true).float().mean())
+        total_loss += loss.item()
+        total_accuracy += (y_pred.max(1)[1] == y_true).float().mean().item()
     mean_loss = total_loss / len(dataloader)
     mean_accuracy = total_accuracy / len(dataloader)
 
@@ -57,15 +56,20 @@ def do_epoch(model, dataloader, criterion, optim=None):
 def main(args):
     train_loader, val_loader = create_dataloaders(args.batch_size)
 
-    model = Net().cuda()
+    model = Net().to(device)
     optim = torch.optim.Adam(model.parameters())
     lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, patience=1, verbose=True)
     criterion = torch.nn.CrossEntropyLoss()
 
     best_accuracy = 0
     for epoch in range(1, args.epochs+1):
+        model.train()
         train_loss, train_accuracy = do_epoch(model, train_loader, criterion, optim=optim)
-        val_loss, val_accuracy = do_epoch(model, val_loader, criterion, optim=None)
+
+        model.eval()
+        with torch.no_grad():
+            val_loss, val_accuracy = do_epoch(model, val_loader, criterion, optim=None)
+
         tqdm.write(f'EPOCH {epoch:03d}: train_loss={train_loss:.4f}, train_accuracy={train_accuracy:.4f} '
                    f'val_loss={val_loss:.4f}, val_accuracy={val_accuracy:.4f}')
 

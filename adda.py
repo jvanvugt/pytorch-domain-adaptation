@@ -6,7 +6,6 @@ import argparse
 
 import torch
 from torch import nn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor
@@ -18,8 +17,11 @@ from models import Net
 from utils import loop_iterable, set_requires_grad, GrayscaleToRgb
 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def main(args):
-    source_model = Net().cuda()
+    source_model = Net().to(device)
     source_model.load_state_dict(torch.load(args.MODEL_FILE))
     source_model.eval()
     set_requires_grad(source_model, requires_grad=False)
@@ -27,7 +29,7 @@ def main(args):
     clf = source_model
     source_model = source_model.feature_extractor
 
-    target_model = Net().cuda()
+    target_model = Net().to(device)
     target_model.load_state_dict(torch.load(args.MODEL_FILE))
     target_model = target_model.feature_extractor
 
@@ -37,7 +39,7 @@ def main(args):
         nn.Linear(50, 20),
         nn.ReLU(),
         nn.Linear(20, 1)
-    ).cuda()
+    ).to(device)
 
     half_batch = args.batch_size // 2
     source_dataset = MNIST(config.DATA_DIR/'mnist', train=True, download=True,
@@ -64,17 +66,14 @@ def main(args):
             set_requires_grad(discriminator, requires_grad=True)
             for _ in range(args.k_disc):
                 (source_x, _), (target_x, _) = next(batch_iterator)
-
-                source_x = Variable(source_x).cuda()
-                target_x = Variable(target_x).cuda()
+                source_x, target_x = source_x.to(device), target_x.to(device)
 
                 source_features = source_model(source_x).view(source_x.shape[0], -1)
                 target_features = target_model(target_x).view(target_x.shape[0], -1)
 
                 discriminator_x = torch.cat([source_features, target_features])
-                discriminator_y = torch.cat([torch.ones(source_x.shape[0]),
-                                             torch.zeros(target_x.shape[0])])
-                discriminator_y = Variable(discriminator_y).cuda()
+                discriminator_y = torch.cat([torch.ones(source_x.shape[0], device=device),
+                                             torch.zeros(target_x.shape[0], device=device)])
 
                 preds = discriminator(discriminator_x).squeeze()
                 loss = criterion(preds, discriminator_y)
@@ -83,25 +82,23 @@ def main(args):
                 loss.backward()
                 discriminator_optim.step()
 
-                total_loss += float(loss)
-                total_accuracy += float(((preds > 0).long() == discriminator_y.long()).float().mean())
+                total_loss += loss.item()
+                total_accuracy += ((preds > 0).long() == discriminator_y.long()).float().mean().item()
 
             # Train classifier
             set_requires_grad(target_model, requires_grad=True)
             set_requires_grad(discriminator, requires_grad=False)
             for _ in range(args.k_clf):
                 (source_x, _), (target_x, _) = next(batch_iterator)
-                source_x = Variable(source_x).cuda()
-                target_x = Variable(target_x).cuda()
+                source_x, target_x = source_x.to(device), target_x.to(device)
 
                 source_features = source_model(source_x).view(source_x.shape[0], -1)
                 target_features = target_model(target_x).view(target_x.shape[0], -1)
 
                 discriminator_x = torch.cat([source_features, target_features])
                 # flipped labels
-                discriminator_y = torch.cat([torch.zeros(source_x.shape[0]),
-                                             torch.ones(target_x.shape[0])])
-                discriminator_y = Variable(discriminator_y).cuda()
+                discriminator_y = torch.cat([torch.zeros(source_x.shape[0], device=device),
+                                             torch.ones(target_x.shape[0], device=device)])
 
                 preds = discriminator(discriminator_x).squeeze()
                 loss = criterion(preds, discriminator_y)

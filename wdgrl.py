@@ -6,7 +6,7 @@ import argparse
 
 import torch
 from torch import nn
-from torch.autograd import Variable, grad
+from torch.autograd import grad
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor
@@ -18,17 +18,19 @@ from models import Net
 from utils import loop_iterable, set_requires_grad, GrayscaleToRgb
 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def gradient_penalty(critic, h_s, h_t):
     # based on: https://github.com/caogang/wgan-gp/blob/master/gan_cifar10.py#L116
-    alpha = torch.rand(h_s.size(0), 1).cuda()
+    alpha = torch.rand(h_s.size(0), 1).to(device)
     differences = h_t - h_s
     interpolates = h_s + (alpha * differences)
-    interpolates = torch.stack([interpolates, h_s, h_t])
-    interpolates = Variable(interpolates, requires_grad=True).cuda()
+    interpolates = torch.stack([interpolates, h_s, h_t]).requires_grad_()
 
     preds = critic(interpolates)
     gradients = grad(preds, interpolates,
-                     grad_outputs=torch.ones(*preds.shape).cuda(),
+                     grad_outputs=torch.ones_like(preds),
                      retain_graph=True, create_graph=True)[0]
     gradient_norm = gradients.norm(2, dim=1)
     gradient_penalty = ((gradient_norm - 1)**2).mean()
@@ -36,7 +38,7 @@ def gradient_penalty(critic, h_s, h_t):
 
 
 def main(args):
-    clf_model = Net().cuda()
+    clf_model = Net().to(device)
     clf_model.load_state_dict(torch.load(args.MODEL_FILE))
     
     feature_extractor = clf_model.feature_extractor
@@ -48,7 +50,7 @@ def main(args):
         nn.Linear(50, 20),
         nn.ReLU(),
         nn.Linear(20, 1)
-    ).cuda()
+    ).to(device)
 
     half_batch = args.batch_size // 2
     source_dataset = MNIST(config.DATA_DIR/'mnist', train=True, download=True,
@@ -75,15 +77,17 @@ def main(args):
             set_requires_grad(feature_extractor, requires_grad=False)
             set_requires_grad(critic, requires_grad=True)
 
-            source_x = Variable(source_x, volatile=True).cuda()
-            target_x = Variable(target_x, volatile=True).cuda()
-            h_s = feature_extractor(source_x).data.view(source_x.shape[0], -1)
-            h_t = feature_extractor(target_x).data.view(target_x.shape[0], -1)
+            source_x, target_x = source_x.to(device), target_x.to(device)
+            source_y = source_y.to(device)
+
+            with torch.no_grad():
+                h_s = feature_extractor(source_x).data.view(source_x.shape[0], -1)
+                h_t = feature_extractor(target_x).data.view(target_x.shape[0], -1)
             for _ in range(args.k_critic):
                 gp = gradient_penalty(critic, h_s, h_t)
 
-                critic_s = critic(Variable(h_s).cuda())
-                critic_t = critic(Variable(h_t).cuda())
+                critic_s = critic(h_s)
+                critic_t = critic(h_t)
                 wasserstein_distance = critic_s.mean() - critic_t.mean()
 
                 critic_cost = -wasserstein_distance + args.gamma*gp
@@ -92,12 +96,9 @@ def main(args):
                 critic_cost.backward()
                 critic_optim.step()
 
-                total_loss += float(critic_cost)
+                total_loss += critic_cost.item()
 
             # Train classifier
-            source_x = Variable(source_x.data).cuda()
-            source_y = Variable(source_y).cuda()
-            target_x = Variable(target_x.data).cuda()
             set_requires_grad(feature_extractor, requires_grad=True)
             set_requires_grad(critic, requires_grad=False)
             for _ in range(args.k_clf):
