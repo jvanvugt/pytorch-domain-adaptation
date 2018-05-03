@@ -89,18 +89,14 @@ def main(args):
             set_requires_grad(target_model, requires_grad=True)
             set_requires_grad(discriminator, requires_grad=False)
             for _ in range(args.k_clf):
-                (source_x, _), (target_x, _) = next(batch_iterator)
-                source_x, target_x = source_x.to(device), target_x.to(device)
-
-                source_features = source_model(source_x).view(source_x.shape[0], -1)
+                _, (target_x, _) = next(batch_iterator)
+                target_x = target_x.to(device)
                 target_features = target_model(target_x).view(target_x.shape[0], -1)
 
-                discriminator_x = torch.cat([source_features, target_features])
                 # flipped labels
-                discriminator_y = torch.cat([torch.zeros(source_x.shape[0], device=device),
-                                             torch.ones(target_x.shape[0], device=device)])
+                discriminator_y = torch.ones(target_x.shape[0], device=device)
 
-                preds = discriminator(discriminator_x).squeeze()
+                preds = discriminator(target_features).squeeze()
                 loss = criterion(preds, discriminator_y)
 
                 target_optim.zero_grad()
