@@ -99,8 +99,8 @@ def main(args):
                 total_loss += critic_cost.item()
 
             # Train classifier
-            set_requires_grad(feature_extractor, requires_grad=True)
-            set_requires_grad(clf_model, requires_grad=False)
+            set_requires_grad(clf_model, requires_grad=True)
+            set_requires_grad(critic, requires_grad=False)
             for _ in range(args.k_clf):
                 source_features = clf_model.feature_extractor(source_x).view(source_x.shape[0], -1)
                 target_features = clf_model.feature_extractor(target_x).view(target_x.shape[0], -1)
