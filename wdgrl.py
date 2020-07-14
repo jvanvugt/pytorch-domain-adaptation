@@ -41,8 +41,8 @@ def main(args):
     clf_model = Net().to(device)
     clf_model.load_state_dict(torch.load(args.MODEL_FILE))
     
-    feature_extractor = clf_model.feature_extractor
-    discriminator = clf_model.classifier
+    #feature_extractor = clf_model.feature_extractor
+    #discriminator = clf_model.classifier
 
     critic = nn.Sequential(
         nn.Linear(320, 50),
@@ -74,15 +74,15 @@ def main(args):
         for _ in trange(args.iterations, leave=False):
             (source_x, source_y), (target_x, _) = next(batch_iterator)
             # Train critic
-            set_requires_grad(feature_extractor, requires_grad=False)
+            set_requires_grad(clf_model, requires_grad=False)
             set_requires_grad(critic, requires_grad=True)
 
             source_x, target_x = source_x.to(device), target_x.to(device)
             source_y = source_y.to(device)
 
             with torch.no_grad():
-                h_s = feature_extractor(source_x).data.view(source_x.shape[0], -1)
-                h_t = feature_extractor(target_x).data.view(target_x.shape[0], -1)
+                h_s = clf_model.feature_extractor(source_x).data.view(source_x.shape[0], -1)
+                h_t = clf_model.feature_extractor(target_x).data.view(target_x.shape[0], -1)
             for _ in range(args.k_critic):
                 gp = gradient_penalty(critic, h_s, h_t)
 
@@ -100,12 +100,12 @@ def main(args):
 
             # Train classifier
             set_requires_grad(feature_extractor, requires_grad=True)
-            set_requires_grad(critic, requires_grad=False)
+            set_requires_grad(clf_model, requires_grad=False)
             for _ in range(args.k_clf):
-                source_features = feature_extractor(source_x).view(source_x.shape[0], -1)
-                target_features = feature_extractor(target_x).view(target_x.shape[0], -1)
+                source_features = clf_model.feature_extractor(source_x).view(source_x.shape[0], -1)
+                target_features = clf_model.feature_extractor(target_x).view(target_x.shape[0], -1)
 
-                source_preds = discriminator(source_features)
+                source_preds = clf_model.classifier(source_features)
                 clf_loss = clf_criterion(source_preds, source_y)
                 wasserstein_distance = critic(source_features).mean() - critic(target_features).mean()
 
